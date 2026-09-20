@@ -1,5 +1,3 @@
-"""Promoter predictor interfaces used by annotation workflows."""
-
 from __future__ import annotations
 
 import json
@@ -9,13 +7,11 @@ from typing import Protocol
 
 
 class PromoterPredictor(Protocol):
-    """Model-agnostic promoter probability interface."""
-
     def predict_proba(self, sequences: list[str]) -> list[float]:
-        """Return one promoter score/probability per input sequence."""
+        ...
 
     def metadata(self) -> dict:
-        """Return model metadata for annotation manifests."""
+        ...
 
 
 class DummyPromoterPredictor:
@@ -45,8 +41,6 @@ class DummyPromoterPredictor:
 
 
 class DNABERT2PromoterPredictor:
-    """Dependency-gated DNABERT2 predictor for benchmark checkpoints."""
-
     def __init__(self, checkpoint: str | Path | None = None, benchmark_manifest: str | Path | None = None):
         if checkpoint is None:
             raise ValueError("DNABERT2 annotation requires --checkpoint from a completed benchmark run.")
@@ -167,7 +161,6 @@ def build_predictor(
     checkpoint: str | Path | None = None,
     benchmark_manifest: str | Path | None = None,
 ) -> PromoterPredictor:
-    """Construct a predictor for the requested model family."""
     if model_family == "dummy":
         return DummyPromoterPredictor()
     if model_family == "dnabert2":

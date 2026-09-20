@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import platform
-import sys
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -142,7 +141,6 @@ def export_sbol2(
         "gold_promoter_count": gold_count,
         "predicted_promoter_count": predicted_count,
         "python": platform.python_version(),
-        "seqtrainer_python": sys.version,
     }
 
 

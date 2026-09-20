@@ -69,6 +69,7 @@ def evaluate_merged_features(
     *,
     sequence_length: int,
     plasmid_id: str,
+    circular: bool = False,
     iou_thresholds: tuple[float, ...] = (0.10, 0.25, 0.50),
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     predicted = list(predictions)
@@ -89,8 +90,8 @@ def evaluate_merged_features(
             "plasmid_id": plasmid_id, "gold_id": item.gold_id, "best_prediction_id": prediction_id,
             "same_strand": bool(pred_index is not None), "intersection_bp": _intersection(predicted[pred_index], item, sequence_length) if pred_index is not None else 0,
             "union_bp": _union(predicted[pred_index], item, sequence_length) if pred_index is not None else 0,
-            "iou": score, "start_error_bp": _boundary_error(predicted[pred_index], item, sequence_length, "start") if pred_index is not None else None,
-            "end_error_bp": _boundary_error(predicted[pred_index], item, sequence_length, "end") if pred_index is not None else None,
+            "iou": score, "start_error_bp": _boundary_error(predicted[pred_index], item, sequence_length, "start", circular) if pred_index is not None else None,
+            "end_error_bp": _boundary_error(predicted[pred_index], item, sequence_length, "end", circular) if pred_index is not None else None,
             **{
                 f"matched_at_{str(threshold).replace('.', '_')}": gold_index in assignments_by_threshold[threshold]
                 for threshold in thresholds
@@ -197,8 +198,9 @@ def _union(first: Any, second: Any, sequence_length: int) -> int:
     return total
 
 
-def _boundary_error(prediction: Any, gold: Any, sequence_length: int, field: str) -> int:
-    return abs(int(getattr(prediction, field)) - int(getattr(gold, field)))
+def _boundary_error(prediction: Any, gold: Any, sequence_length: int, field: str, circular: bool) -> int:
+    delta = abs(int(getattr(prediction, field)) - int(getattr(gold, field)))
+    return min(delta, sequence_length - delta) if circular else delta
 
 
 def _recovery(frame: pd.DataFrame, gold: Iterable[GroundTruthPromoter]) -> dict[str, Any]:

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 import subprocess
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -14,14 +13,13 @@ import pandas as pd
 
 from .genbank_io import read_genbank, record_topology, write_genbank
 from .predictors import PromoterPredictor, build_predictor
+from .provenance import file_sha256
 from .windows import SequenceWindow, generate_sliding_windows
 from .write_features import PromoterRegion, add_predicted_promoter_features
 
 
 @dataclass(frozen=True)
 class PromoterAnnotationConfig:
-    """Configuration for promoter annotation over one GenBank record."""
-
     input_file: Path
     output_file: Path | None = None
     predictions_csv: Path | None = None
@@ -35,13 +33,9 @@ class PromoterAnnotationConfig:
     step_size: int = 25
     scan_both_strands: bool = True
     merge_distance: int = 25
-    min_score: float | None = None
-    preserve_existing_features: bool = True
-    gold_csv: Path | None = None
     evaluation_dir: Path | None = None
     sbol_output: Path | None = None
     sbol2_output: Path | None = None
-    clean_output: bool = False
     sbol_namespace: str = "https://seqtrainer.org/designs"
     promoter_label_mode: str = "labelled"
     annotation_completeness: str = "unknown"
@@ -54,7 +48,6 @@ def run_promoter_annotation(
     *,
     predictor: PromoterPredictor | None = None,
 ) -> dict[str, Any]:
-    """Annotate likely promoter regions in a GenBank plasmid record."""
     checkpoint, benchmark_manifest = _resolve_model_bundle(
         config.model_bundle,
         checkpoint=config.checkpoint,
@@ -66,17 +59,17 @@ def run_promoter_annotation(
             checkpoint=checkpoint,
             benchmark_manifest=benchmark_manifest,
         )
+    if config.model_family == "dnabert2" and (config.checkpoint is None or config.benchmark_manifest is None):
+        raise ValueError("DNABERT2 annotation requires a checkpoint and matching benchmark manifest.")
+    if config.model_family == "dummy" and (config.threshold is None or config.window_size is None):
+        raise ValueError("Dummy annotation requires explicit threshold and window_size values.")
+
     record = read_genbank(config.input_file)
     output_file, predictions_csv, manifest_path = _resolve_outputs(config)
-    if config.clean_output:
-        _clean_annotation_outputs(config, output_file, predictions_csv, manifest_path)
     original_feature_count = len(record.features)
 
-    # Capture deposited labels before optionally removing source features from
-    # the output record. Evaluation must describe the input annotations even
-    # when the caller requests a prediction-only GenBank file.
     gold_promoters = None
-    if config.evaluation_dir is not None or config.sbol_output is not None or config.sbol2_output is not None or config.gold_csv is not None:
+    if config.evaluation_dir is not None or config.sbol_output is not None or config.sbol2_output is not None:
         from .ground_truth import extract_ground_truth_promoters
 
         gold_promoters = extract_ground_truth_promoters(
@@ -86,13 +79,7 @@ def run_promoter_annotation(
             label_mode=config.promoter_label_mode,
         )
 
-    if not config.preserve_existing_features:
-        record.features = []
-
-    manifest_data, manifest_warnings = _load_manifest(
-        config.benchmark_manifest,
-        allow_missing=config.model_family == "dummy" and config.threshold is not None and config.window_size is not None,
-    )
+    manifest_data = _load_manifest(config.benchmark_manifest) if config.model_family == "dnabert2" else {}
     threshold, threshold_source = _resolve_threshold(config.threshold, manifest_data)
     window_size = _resolve_window_size(config.window_size, manifest_data)
     step_size = config.step_size or 25
@@ -118,7 +105,7 @@ def run_promoter_annotation(
     passing: list[tuple[SequenceWindow, float]] = []
     for window, raw_score in zip(windows, scores):
         score = float(raw_score)
-        passed = score >= threshold and (config.min_score is None or score >= config.min_score)
+        passed = score >= threshold
         overlaps = _overlap_summary(record, window.start, window.end, window.is_circular_boundary_window)
         row = {
             "sequence_id": record.id,
@@ -180,15 +167,12 @@ def run_promoter_annotation(
         gold_promoters=gold_promoters,
     )
 
-    warnings = list(manifest_warnings)
+    warnings = []
     if config.model_family == "dummy":
         warnings.append("Dummy predictor used for smoke testing only; do not treat scores as biological evidence.")
-    if threshold_source == "default":
-        warnings.append("No threshold found in benchmark manifest; used default threshold 0.80.")
-
     manifest = {
         "input_file": str(config.input_file),
-        "input_sha256": _file_sha256(config.input_file),
+        "input_sha256": file_sha256(config.input_file),
         "output_file": str(output_file),
         "predictions_csv": str(predictions_csv),
         "sequence_id": record.id,
@@ -197,9 +181,9 @@ def run_promoter_annotation(
         "model_family": config.model_family,
         "model_bundle": str(config.model_bundle) if config.model_bundle else None,
         "checkpoint": str(config.checkpoint) if config.checkpoint else None,
-        "checkpoint_sha256": _file_sha256(config.checkpoint) if config.checkpoint else None,
+        "checkpoint_sha256": file_sha256(config.checkpoint) if config.checkpoint else None,
         "benchmark_manifest": str(config.benchmark_manifest) if config.benchmark_manifest else None,
-        "benchmark_manifest_sha256": _file_sha256(config.benchmark_manifest) if config.benchmark_manifest else None,
+        "benchmark_manifest_sha256": file_sha256(config.benchmark_manifest) if config.benchmark_manifest else None,
         "source_url": config.source_url,
         "window_size": window_size,
         "step_size": step_size,
@@ -210,7 +194,7 @@ def run_promoter_annotation(
         "total_windows_scanned": len(windows),
         "windows_above_threshold": len(passing),
         "predicted_promoters_added": added,
-        "existing_features_preserved": original_feature_count if config.preserve_existing_features else 0,
+        "existing_features_preserved": original_feature_count,
         "overlaps_existing_promoters_count": int(prediction_frame["overlaps_existing_promoter"].sum()) if "overlaps_existing_promoter" in prediction_frame else 0,
         "circular_boundary_windows_scanned": int(prediction_frame["is_circular_boundary_window"].sum()) if "is_circular_boundary_window" in prediction_frame else 0,
         "circular_boundary_features_written": boundary_written,
@@ -219,7 +203,7 @@ def run_promoter_annotation(
         "git_sha": _git_sha(),
         "predictor_metadata": predictor.metadata(),
         "annotation_completeness": config.annotation_completeness,
-        "sbol_namespace": config.sbol_namespace if config.sbol_output else None,
+        "sbol_namespace": config.sbol_namespace if config.sbol_output or config.sbol2_output else None,
         "evaluation": evaluation_artifacts,
     }
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -240,7 +224,7 @@ def _write_external_evaluation(
     gold_promoters: list[Any] | None,
 ) -> dict[str, Any]:
     """Write labelled-plasmid evaluation artifacts when evaluation is requested."""
-    if config.evaluation_dir is None and config.sbol_output is None and config.sbol2_output is None and config.gold_csv is None:
+    if config.evaluation_dir is None and config.sbol_output is None and config.sbol2_output is None:
         return {}
     from .evaluation import evaluate_merged_features, evaluate_windows
     from .ground_truth import write_gold_promoters
@@ -249,7 +233,7 @@ def _write_external_evaluation(
     evaluation_dir = Path(config.evaluation_dir or Path(config.predictions_csv or "outputs/annotations").parent)
     evaluation_dir.mkdir(parents=True, exist_ok=True)
     gold = list(gold_promoters or [])
-    gold_path = write_gold_promoters(gold, config.gold_csv or evaluation_dir / "gold_promoters.csv")
+    gold_path = write_gold_promoters(gold, evaluation_dir / "gold_promoters.csv")
     window_frame, window_metrics = evaluate_windows(
         windows,
         scores,
@@ -266,6 +250,7 @@ def _write_external_evaluation(
         gold,
         sequence_length=len(record.seq),
         plasmid_id=str(record.id),
+        circular=record_topology(record) == "circular",
         iou_thresholds=(0.10, 0.25, config.iou_threshold),
     )
     window_path = evaluation_dir / "window_predictions.csv"
@@ -330,21 +315,12 @@ def _json_default(value: Any) -> Any:
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
-def _load_manifest(path: Path | None, *, allow_missing: bool = False) -> tuple[dict[str, Any], list[str]]:
-    if path is None:
-        return {}, []
+def _load_manifest(path: Path) -> dict[str, Any]:
     if not path.exists():
-        if allow_missing:
-            return {}, [
-                (
-                    f"Benchmark manifest not found at {path}; continued with explicit CLI "
-                    "threshold/window-size values."
-                )
-            ]
         raise FileNotFoundError(f"Benchmark manifest not found: {path}")
     # ``utf-8-sig`` accepts standard UTF-8 and the BOM emitted by Windows
     # PowerShell, which makes copied benchmark manifests portable.
-    return json.loads(path.read_text(encoding="utf-8-sig")), []
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _resolve_threshold(explicit: float | None, manifest: dict[str, Any]) -> tuple[float, str]:
@@ -357,7 +333,7 @@ def _resolve_threshold(explicit: float | None, manifest: dict[str, Any]) -> tupl
     for value in candidates:
         if value is not None:
             return float(value), "benchmark_manifest"
-    return 0.80, "default"
+    raise ValueError("Benchmark manifest does not contain a validation-selected threshold.")
 
 
 def _resolve_window_size(explicit: int | None, manifest: dict[str, Any]) -> int:
@@ -371,7 +347,7 @@ def _resolve_window_size(explicit: int | None, manifest: dict[str, Any]) -> int:
     for value in candidates:
         if value:
             return int(value)
-    return 300
+    raise ValueError("Benchmark manifest does not contain a preprocessing window size.")
 
 
 def _resolve_outputs(config: PromoterAnnotationConfig) -> tuple[Path, Path, Path]:
@@ -381,34 +357,6 @@ def _resolve_outputs(config: PromoterAnnotationConfig) -> tuple[Path, Path, Path
     predictions_csv = config.predictions_csv or out_dir / f"{stem}_{config.model_family}_predictions.csv"
     manifest = config.manifest or out_dir / f"{stem}_{config.model_family}_manifest.json"
     return output_file, predictions_csv, manifest
-
-
-def _clean_annotation_outputs(
-    config: PromoterAnnotationConfig,
-    output_file: Path,
-    predictions_csv: Path,
-    manifest_path: Path,
-) -> None:
-    """Remove artifacts from the explicitly requested annotation run.
-
-    An explicit evaluation directory is treated as a disposable run folder and
-    cleared completely. Primary outputs and optional SBOL files are removed
-    individually so cleanup cannot erase neighboring experiments.
-    """
-    paths = [output_file, predictions_csv, manifest_path, config.sbol_output, config.sbol2_output, config.gold_csv]
-    for path in paths:
-        if path is not None and path.is_file():
-            path.unlink()
-
-    if config.evaluation_dir is None:
-        return
-    evaluation_dir = Path(config.evaluation_dir)
-    if not evaluation_dir.exists():
-        return
-    resolved = evaluation_dir.resolve()
-    if resolved == Path(resolved.anchor) or resolved == Path.cwd().resolve():
-        raise ValueError(f"Refusing to clean unsafe evaluation directory: {evaluation_dir}")
-    shutil.rmtree(evaluation_dir)
 
 
 def _resolve_model_bundle(
@@ -556,15 +504,3 @@ def _git_sha() -> str | None:
     except OSError:
         return None
     return result.stdout.strip() if result.returncode == 0 else None
-
-
-def _file_sha256(path: Path) -> str | None:
-    if not path.exists():
-        return None
-    import hashlib
-
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()

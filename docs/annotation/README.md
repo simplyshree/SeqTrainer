@@ -1,9 +1,9 @@
 # Promoter Annotation
 
-SeqTrainer scans a GenBank record with a trained DNABERT2 classifier, applies
-the threshold selected on the validation split, merges nearby positive windows,
-and writes computational `predicted_promoter` features without altering source
-features. Predictions are not validated biological annotations.
+SeqTrainer scans a GenBank record with DNABERT2, applies the threshold selected
+on the validation split, merges nearby positive windows, and appends
+computational `predicted_promoter` features. Predictions are not validated
+biological annotations.
 
 ## Install
 
@@ -13,24 +13,24 @@ git lfs install
 git lfs pull
 ```
 
-The bundled Kaggle DNABERT2 model is stored at:
+The bundled DNABERT2 model is stored at:
 
 ```text
 outputs/models/dnabert2_kaggle_best/
   manifest.json
-  checkpoints/best_model.pt
+  checkpoints/
+    best_model.pt
 ```
 
 `manifest.json` supplies the validation-selected threshold and preprocessing
 contract. `best_model.pt` supplies the trained weights. Keep them together.
 If LFS is unavailable, use `scripts/prepare_dnabert2_annotation_bundle.ps1`
-with the supplied Kaggle archive.
+with the supplied model archive.
 
 ## Run DNABERT2
 
 Keep a GenBank file outside the repository if preferred, then pass its full
-path. This PowerShell command writes all artifacts into one disposable run
-folder:
+path. This PowerShell command writes all artifacts into one run folder:
 
 ```powershell
 seqtrainer annotate promoters "$env:USERPROFILE\Downloads\my_plasmid.gb" `
@@ -40,9 +40,7 @@ seqtrainer annotate promoters "$env:USERPROFILE\Downloads\my_plasmid.gb" `
   --scan-both-strands `
   --output outputs\annotations\my_plasmid\annotated.gb `
   --predictions-csv outputs\annotations\my_plasmid\predictions.csv `
-  --manifest outputs\annotations\my_plasmid\manifest.json `
-  --clean-output `
-  --open-output-folder
+  --manifest outputs\annotations\my_plasmid\manifest.json
 ```
 
 Use `--checkpoint` and `--benchmark-manifest` instead of `--model-bundle` only
@@ -69,10 +67,6 @@ The dummy predictor is deterministic and is not biological evidence.
 | `evaluation/` | Optional labelled-plasmid gold labels, window scores, promoter matches, and metrics. |
 | `annotated.nt` | Optional SBOL3 machine-exchange export. |
 | `annotated.rdf` | Optional Canvas-compatible SBOL2 RDF/XML export. |
-
-`--clean-output` removes only the named primary artifacts and the explicitly
-named evaluation directory before regeneration. Existing prediction CSVs are
-never treated as reusable inference results.
 
 ## Labelled Plasmid Evaluation
 

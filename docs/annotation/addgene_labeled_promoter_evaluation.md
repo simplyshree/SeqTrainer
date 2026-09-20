@@ -1,11 +1,11 @@
 # Labelled Promoter Evaluation
 
-This workflow evaluates an already-trained SeqTrainer model against locally downloaded Addgene GenBank records. It is external evaluation: the model is not retrained and the threshold is read from the benchmark manifest. Addgene sequences are never downloaded by SeqTrainer or committed to Git.
+This workflow evaluates an already-trained SeqTrainer model against locally downloaded Addgene GenBank records. It is external evaluation: the model is not retrained and the threshold is read from the benchmark manifest. Addgene sequences are never downloaded by SeqTrainer or committed to Git. Place files listed in `data-manifests/addgene_article_18115.csv` under `data/addgene_18115/raw/` without renaming them.
 
 ## Single plasmid
 
 ```powershell
-seqtrainer annotate promoter data/addgene_18115/raw/pAN1717.gb `
+seqtrainer annotate promoters data/addgene_18115/raw/pAN1717.gb `
   --model-family dnabert2 `
   --checkpoint outputs/models/dnabert2_kaggle_best/checkpoints/best_model.pt `
   --benchmark-manifest outputs/models/dnabert2_kaggle_best/manifest.json `
@@ -22,8 +22,7 @@ The run preserves input features and writes an annotated GenBank file,
 `predictions.csv`, `gold_promoters.csv`, `window_predictions.csv`,
 `promoter_matches.csv`, `metrics.csv`, `metrics.json`,
 `annotation_manifest.json`, `sbol_validation.json`, optional SBOL3
-`annotated.nt`, and SBOL2 RDF/XML `annotated_sbol2.rdf` for SBOLCanvas. Add
-`--clean-output` to replace the named run artifacts before a repeat run.
+`annotated.nt`, and SBOL2 RDF/XML `annotated_sbol2.rdf` for SBOLCanvas.
 
 ## Collection
 
@@ -32,8 +31,8 @@ seqtrainer annotate promoter-collection `
   --manifest data-manifests/addgene_article_18115.csv `
   --input-dir data/addgene_18115/raw `
   --output-dir outputs/addgene_18115 `
-  --predictor dnabert2 `
-  --model-path outputs/models/dnabert2_kaggle_best/checkpoints/best_model.pt `
+  --model-family dnabert2 `
+  --checkpoint outputs/models/dnabert2_kaggle_best/checkpoints/best_model.pt `
   --benchmark-manifest outputs/models/dnabert2_kaggle_best/manifest.json `
   --promoter-label-mode strict `
   --annotation-completeness unknown `

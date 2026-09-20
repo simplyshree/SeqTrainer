@@ -1,11 +1,6 @@
-"""Collection workflow for manually downloaded Addgene GenBank files."""
-
 from __future__ import annotations
 
-import hashlib
 import json
-import platform
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,6 +10,7 @@ import pandas as pd
 from .genbank_io import read_genbank
 from .ground_truth import extract_ground_truth_promoters
 from .promoter_inference import PromoterAnnotationConfig, run_promoter_annotation
+from .provenance import file_sha256
 
 
 def run_promoter_collection(
@@ -22,16 +18,17 @@ def run_promoter_collection(
     *,
     input_dir: str | Path,
     output_dir: str | Path,
-    predictor: str = "dummy",
-    model_path: str | Path | None = None,
+    model_family: str = "dummy",
+    checkpoint: str | Path | None = None,
     benchmark_manifest: str | Path | None = None,
+    threshold: float | None = None,
+    window_size: int | None = None,
     sbol_namespace: str = "https://seqtrainer.org/designs",
     promoter_label_mode: str = "labelled",
     write_sbol3: bool = False,
     continue_on_error: bool = False,
     annotation_completeness: str = "unknown",
 ) -> dict[str, Any]:
-    """Process each available manifest entry independently and audit skips."""
     manifest_path = Path(manifest_path)
     input_dir = Path(input_dir)
     output_dir = Path(output_dir)
@@ -64,9 +61,11 @@ def run_promoter_collection(
                     output_file=plasmid_dir / "annotated.gb",
                     predictions_csv=plasmid_dir / "predictions.csv",
                     manifest=plasmid_dir / "annotation_manifest.json",
-                    model_family=predictor,
-                    checkpoint=Path(model_path) if model_path else None,
+                    model_family=model_family,
+                    checkpoint=Path(checkpoint) if checkpoint else None,
                     benchmark_manifest=Path(benchmark_manifest) if benchmark_manifest else None,
+                    threshold=threshold,
+                    window_size=window_size,
                     evaluation_dir=plasmid_dir,
                     sbol_output=plasmid_dir / "annotated.nt" if write_sbol3 else None,
                     sbol_namespace=sbol_namespace,
@@ -93,11 +92,11 @@ def run_promoter_collection(
     (output_dir / "aggregate_metrics.json").write_text(json.dumps(aggregate, indent=2, default=str) + "\n", encoding="utf-8")
     collection_manifest = {
         "source_manifest": str(manifest_path), "input_dir": str(input_dir), "output_dir": str(output_dir),
-        "predictor": predictor, "model_path": str(model_path) if model_path else None,
+        "model_family": model_family, "checkpoint": str(checkpoint) if checkpoint else None,
         "benchmark_manifest": str(benchmark_manifest) if benchmark_manifest else None,
         "promoter_label_mode": promoter_label_mode, "annotation_completeness": annotation_completeness,
         "write_sbol3": write_sbol3, "included_count": len(included), "excluded_count": len(excluded),
-        "python": sys.version, "platform": platform.platform(), "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
     (output_dir / "collection_manifest.json").write_text(json.dumps(collection_manifest, indent=2) + "\n", encoding="utf-8")
     return collection_manifest
@@ -117,11 +116,3 @@ def _flatten(values: dict[str, Any]) -> dict[str, Any]:
 
 def _safe_id(value: str) -> str:
     return "".join(char if char.isalnum() or char in "-_" else "_" for char in value) or "plasmid"
-
-
-def file_sha256(path: str | Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for block in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(block)
-    return digest.hexdigest()

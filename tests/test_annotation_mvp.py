@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from seqtrainer.annotation import PromoterAnnotationConfig, run_promoter_annotation
 from seqtrainer.annotation.genbank_io import read_genbank
@@ -180,6 +181,8 @@ def test_annotation_cli_dummy_smoke(tmp_path):
 
 
 def test_annotation_uses_threshold_and_window_from_benchmark_manifest(tmp_path):
+    from seqtrainer.annotation.predictors import DummyPromoterPredictor
+
     input_gb = _write_synthetic_genbank(tmp_path / "input.gb")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     benchmark_manifest.write_text(
@@ -191,6 +194,8 @@ def test_annotation_uses_threshold_and_window_from_benchmark_manifest(tmp_path):
 """,
         encoding="utf-8",
     )
+    checkpoint = tmp_path / "best_model.pt"
+    checkpoint.write_bytes(b"checkpoint")
 
     manifest = run_promoter_annotation(
         PromoterAnnotationConfig(
@@ -198,10 +203,12 @@ def test_annotation_uses_threshold_and_window_from_benchmark_manifest(tmp_path):
             output_file=tmp_path / "annotated.gb",
             predictions_csv=tmp_path / "predictions.csv",
             manifest=tmp_path / "manifest.json",
-            model_family="dummy",
+            model_family="dnabert2",
+            checkpoint=checkpoint,
             benchmark_manifest=benchmark_manifest,
             step_size=4,
-        )
+        ),
+        predictor=DummyPromoterPredictor(),
     )
 
     assert manifest["threshold"] == 0.9
@@ -210,12 +217,16 @@ def test_annotation_uses_threshold_and_window_from_benchmark_manifest(tmp_path):
 
 
 def test_annotation_accepts_windows_utf8_bom_benchmark_manifest(tmp_path):
+    from seqtrainer.annotation.predictors import DummyPromoterPredictor
+
     input_gb = _write_synthetic_genbank(tmp_path / "input.gb")
     benchmark_manifest = tmp_path / "benchmark_manifest.json"
     benchmark_manifest.write_text(
         '{"evaluation": {"selected_threshold": 0.9}, "preprocessing": {"sequence_length": 8}}',
         encoding="utf-8-sig",
     )
+    checkpoint = tmp_path / "best_model.pt"
+    checkpoint.write_bytes(b"checkpoint")
 
     manifest = run_promoter_annotation(
         PromoterAnnotationConfig(
@@ -223,10 +234,12 @@ def test_annotation_accepts_windows_utf8_bom_benchmark_manifest(tmp_path):
             output_file=tmp_path / "annotated.gb",
             predictions_csv=tmp_path / "predictions.csv",
             manifest=tmp_path / "manifest.json",
-            model_family="dummy",
+            model_family="dnabert2",
+            checkpoint=checkpoint,
             benchmark_manifest=benchmark_manifest,
             step_size=4,
-        )
+        ),
+        predictor=DummyPromoterPredictor(),
     )
 
     assert manifest["threshold"] == 0.9
@@ -234,7 +247,8 @@ def test_annotation_accepts_windows_utf8_bom_benchmark_manifest(tmp_path):
 
 
 def test_annotation_resolves_model_bundle_paths(tmp_path):
-    input_gb = _write_synthetic_genbank(tmp_path / "input.gb")
+    from seqtrainer.annotation.promoter_inference import _resolve_model_bundle
+
     bundle = tmp_path / "model_bundle"
     (bundle / "checkpoints").mkdir(parents=True)
     checkpoint = bundle / "checkpoints" / "best_model.pt"
@@ -245,42 +259,27 @@ def test_annotation_resolves_model_bundle_paths(tmp_path):
         encoding="utf-8",
     )
 
-    manifest = run_promoter_annotation(
-        PromoterAnnotationConfig(
-            input_file=input_gb,
-            output_file=tmp_path / "annotated.gb",
-            predictions_csv=tmp_path / "predictions.csv",
-            manifest=tmp_path / "annotation_manifest.json",
-            model_family="dummy",
-            model_bundle=bundle,
-            step_size=4,
-        )
+    resolved_checkpoint, resolved_manifest = _resolve_model_bundle(
+        bundle,
+        checkpoint=None,
+        benchmark_manifest=None,
     )
 
-    assert manifest["checkpoint"] == str(checkpoint)
-    assert manifest["benchmark_manifest"] == str(benchmark_manifest)
-    assert manifest["model_bundle"] == str(bundle)
-    assert manifest["threshold"] == 0.91
+    assert resolved_checkpoint == checkpoint
+    assert resolved_manifest == benchmark_manifest
 
 
-def test_annotation_allows_missing_manifest_when_cli_values_are_explicit(tmp_path):
+def test_dummy_annotation_requires_explicit_threshold_and_window_size(tmp_path):
     input_gb = _write_synthetic_genbank(tmp_path / "input.gb")
 
-    manifest = run_promoter_annotation(
+    with pytest.raises(ValueError, match="explicit threshold and window_size"):
+        run_promoter_annotation(
         PromoterAnnotationConfig(
             input_file=input_gb,
             output_file=tmp_path / "annotated.gb",
             predictions_csv=tmp_path / "predictions.csv",
             manifest=tmp_path / "manifest.json",
             model_family="dummy",
-            benchmark_manifest=tmp_path / "missing_benchmark_manifest.json",
-            threshold=0.80,
-            window_size=8,
             step_size=4,
         )
-    )
-
-    assert manifest["threshold"] == 0.80
-    assert manifest["threshold_source"] == "cli"
-    assert manifest["window_size"] == 8
-    assert "Benchmark manifest not found" in manifest["warnings"][0]
+        )

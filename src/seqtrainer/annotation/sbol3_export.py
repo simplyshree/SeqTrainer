@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import platform
-import sys
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -69,7 +68,7 @@ def export_sbol3(
     for index, feature in enumerate(getattr(record, "features", [])):
         if "seqtrainer_model_family" in (getattr(feature, "qualifiers", {}) or {}):
             continue
-        locations = _feature_locations(sbol3, sequence, feature, len(record.seq), namespace, plasmid_id, index)
+        locations = _feature_locations(sbol3, sequence, feature, len(record.seq))
         if not locations:
             continue
         feature_type = str(getattr(feature, "type", "unknown")).lower()
@@ -85,7 +84,7 @@ def export_sbol3(
         component.features.append(sbol3.SequenceFeature(**kwargs))
 
     for index, promoter in enumerate(gold_promoters):
-        locations = _ground_truth_locations(sbol3, sequence, promoter, len(record.seq), namespace, plasmid_id, index)
+        locations = _ground_truth_locations(sbol3, sequence, promoter, len(record.seq))
         feature = sbol3.SequenceFeature(
             locations=locations,
             roles=[sbol3.SO_PROMOTER],
@@ -96,7 +95,7 @@ def export_sbol3(
         component.features.append(feature)
 
     for index, promoter in enumerate(predicted_regions):
-        locations = _region_locations(sbol3, sequence, promoter, len(record.seq), namespace, plasmid_id, index)
+        locations = _region_locations(sbol3, sequence, promoter, len(record.seq))
         details = provenance or {}
         description = (
             "SeqTrainer model-predicted promoter; "
@@ -126,24 +125,24 @@ def export_sbol3(
     if validation_path:
         Path(validation_path).parent.mkdir(parents=True, exist_ok=True)
         Path(validation_path).write_text(json.dumps({**validation, "round_trip_objects": len(round_trip.objects)}, indent=2) + "\n", encoding="utf-8")
-    return {"path": str(out), "validation": validation, "round_trip_objects": len(round_trip.objects), "sbol3_version": getattr(sbol3, "__version__", None), "python": platform.python_version(), "seqtrainer_python": sys.version}
+    return {"path": str(out), "validation": validation, "round_trip_objects": len(round_trip.objects), "sbol3_version": getattr(sbol3, "__version__", None), "python": platform.python_version()}
 
 
-def _feature_locations(sbol3: Any, sequence: Any, feature: Any, length: int, namespace: str, plasmid: str, index: int) -> list[Any]:
+def _feature_locations(sbol3: Any, sequence: Any, feature: Any, length: int) -> list[Any]:
     ranges = sbol_ranges_for_location(feature.location, length)
     return [sbol3.Range(sequence, item["start"], item["end"], orientation=sbol_orientation(item["orientation"]), order=order) for order, item in enumerate(ranges)]
 
 
-def _ground_truth_locations(sbol3: Any, sequence: Any, promoter: GroundTruthPromoter, length: int, namespace: str, plasmid: str, index: int) -> list[Any]:
-    return _interval_locations(sbol3, sequence, promoter.start, promoter.end, promoter.strand, promoter.wraps_origin, length, namespace, plasmid, f"gold_{index}")
+def _ground_truth_locations(sbol3: Any, sequence: Any, promoter: GroundTruthPromoter, length: int) -> list[Any]:
+    return _interval_locations(sbol3, sequence, promoter.start, promoter.end, promoter.strand, promoter.wraps_origin, length)
 
 
-def _region_locations(sbol3: Any, sequence: Any, promoter: PromoterRegion, length: int, namespace: str, plasmid: str, index: int) -> list[Any]:
+def _region_locations(sbol3: Any, sequence: Any, promoter: PromoterRegion, length: int) -> list[Any]:
     strand = 1 if promoter.strand == "+" else -1 if promoter.strand == "-" else None
-    return _interval_locations(sbol3, sequence, promoter.start, promoter.end, strand, promoter.crosses_boundary, length, namespace, plasmid, f"predicted_{index}")
+    return _interval_locations(sbol3, sequence, promoter.start, promoter.end, strand, promoter.crosses_boundary, length)
 
 
-def _interval_locations(sbol3: Any, sequence: Any, start: int, end: int, strand: int | None, wraps: bool, length: int, namespace: str, plasmid: str, key: str) -> list[Any]:
+def _interval_locations(sbol3: Any, sequence: Any, start: int, end: int, strand: int | None, wraps: bool, length: int) -> list[Any]:
     intervals = [(start, length), (0, end % length)] if wraps or start > end else [(start, end)]
     orientation = sbol_orientation(strand)
     return [sbol3.Range(sequence, left + 1, right, orientation=orientation, order=index) for index, (left, right) in enumerate(intervals)]

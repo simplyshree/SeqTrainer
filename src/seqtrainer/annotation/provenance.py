@@ -1,5 +1,3 @@
-"""Stable provenance objects for SeqTrainer annotation exports."""
-
 from __future__ import annotations
 
 import hashlib
@@ -16,7 +14,6 @@ def file_sha256(path: str | Path) -> str:
 
 
 def stable_identity(namespace: str, *parts: object) -> str:
-    """Build deterministic, URL-safe identities without random UUIDs."""
     clean = [str(part).strip("/").replace(" ", "_") for part in parts]
     return "/".join([namespace.rstrip("/")] + clean)
 

@@ -145,6 +145,20 @@ def test_merged_evaluation_uses_maximum_cardinality_matching():
     assert metrics["matched_promoter_count"] == 2
 
 
+def test_merged_evaluation_uses_circular_boundary_distance():
+    predicted = PromoterRegion("prediction", 99, 4, "+", 0.9, ("prediction",), crosses_boundary=True)
+    _, metrics = evaluate_merged_features(
+        [predicted],
+        [_gold("gold", 1, 4)],
+        sequence_length=100,
+        plasmid_id="p1",
+        circular=True,
+        iou_thresholds=(0.10,),
+    )
+
+    assert metrics["median_boundary_error"] == 1.0
+
+
 def test_annotation_cli_writes_validated_sbol3_output(tmp_path: Path):
     import json
 
@@ -210,6 +224,7 @@ def test_annotation_cli_writes_validated_sbol3_output(tmp_path: Path):
     sbol2_metadata = annotation_manifest["evaluation"]["sbol"]["sbol2"]
     assert sbol2_metadata["canvas_compatible"] is True
     assert sbol2_metadata["canvas_roleless_child_component_count"] == 0
+    assert annotation_manifest["sbol_namespace"] == "https://seqtrainer.org/designs"
 
 
 def test_sbol2_export_assigns_canvas_safe_role_to_untyped_features(tmp_path: Path):
@@ -255,58 +270,6 @@ def test_sbol2_export_assigns_canvas_safe_role_to_untyped_features(tmp_path: Pat
     assert all(definition.roles for definition in definitions)
 
 
-def test_evaluation_captures_gold_before_source_features_are_removed(tmp_path: Path):
-    from Bio import SeqIO
-
-    input_path = tmp_path / "input.gb"
-    SeqIO.write(_record(), input_path, "genbank")
-    evaluation_dir = tmp_path / "evaluation"
-    run_promoter_annotation(
-        PromoterAnnotationConfig(
-            input_file=input_path,
-            output_file=tmp_path / "prediction_only.gb",
-            predictions_csv=tmp_path / "predictions.csv",
-            manifest=tmp_path / "annotation_manifest.json",
-            model_family="dummy",
-            threshold=0.8,
-            window_size=8,
-            step_size=4,
-            preserve_existing_features=False,
-            evaluation_dir=evaluation_dir,
-            annotation_completeness="verified_complete",
-        )
-    )
-    assert pd.read_csv(evaluation_dir / "gold_promoters.csv").shape[0] == 4
-
-
-def test_clean_output_removes_previous_evaluation_artifacts(tmp_path: Path):
-    from Bio import SeqIO
-
-    input_path = tmp_path / "input.gb"
-    SeqIO.write(_record(), input_path, "genbank")
-    evaluation_dir = tmp_path / "evaluation"
-    evaluation_dir.mkdir()
-    (evaluation_dir / "stale_plot.png").write_bytes(b"old")
-
-    run_promoter_annotation(
-        PromoterAnnotationConfig(
-            input_file=input_path,
-            output_file=tmp_path / "annotated.gb",
-            predictions_csv=tmp_path / "predictions.csv",
-            manifest=tmp_path / "manifest.json",
-            model_family="dummy",
-            threshold=0.8,
-            window_size=8,
-            step_size=4,
-            evaluation_dir=evaluation_dir,
-            clean_output=True,
-        )
-    )
-
-    assert not (evaluation_dir / "stale_plot.png").exists()
-    assert (evaluation_dir / "metrics.json").exists()
-
-
 def test_window_centre_labels_same_strand():
     record = _record()
     gold = extract_ground_truth_promoters(record)
@@ -335,7 +298,9 @@ def test_collection_skips_missing_files_and_writes_audit(tmp_path: Path):
         manifest,
         input_dir=input_dir,
         output_dir=output_dir,
-        predictor="dummy",
+        model_family="dummy",
+        threshold=0.8,
+        window_size=8,
         continue_on_error=True,
     )
     assert result["included_count"] == 1
