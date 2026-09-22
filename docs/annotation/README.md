@@ -47,7 +47,11 @@ Use `--checkpoint` and `--benchmark-manifest` instead of `--model-bundle` only
 when the two paths must be supplied explicitly. A real DNABERT2 run requires
 the matching benchmark manifest; it will not silently substitute a default
 threshold or window length. Do not tune the threshold on the plasmid being
-annotated.
+annotated. `--threshold` is an expert override: the annotation manifest records
+it as `cli_override` and warns that it is not the benchmark-selected operating
+point. The bundled manifest may permit a download of its pinned Hugging Face
+revision when it is not cached locally; `predictor_metadata.model_download_enabled`
+records that behavior in each annotation manifest.
 
 For a quick file-writing smoke test, replace the model arguments with:
 

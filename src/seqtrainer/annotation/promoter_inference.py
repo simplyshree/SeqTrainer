@@ -82,7 +82,7 @@ def run_promoter_annotation(
     manifest_data = _load_manifest(config.benchmark_manifest) if config.model_family == "dnabert2" else {}
     threshold, threshold_source = _resolve_threshold(config.threshold, manifest_data)
     window_size = _resolve_window_size(config.window_size, manifest_data)
-    step_size = config.step_size or 25
+    step_size = config.step_size
 
     predictor = predictor or build_predictor(
         config.model_family,
@@ -170,6 +170,8 @@ def run_promoter_annotation(
     warnings = []
     if config.model_family == "dummy":
         warnings.append("Dummy predictor used for smoke testing only; do not treat scores as biological evidence.")
+    if config.model_family == "dnabert2" and threshold_source == "cli_override":
+        warnings.append("Threshold was overridden on the command line; this result is not the benchmark-selected operating point.")
     manifest = {
         "input_file": str(config.input_file),
         "input_sha256": file_sha256(config.input_file),
@@ -251,7 +253,7 @@ def _write_external_evaluation(
         sequence_length=len(record.seq),
         plasmid_id=str(record.id),
         circular=record_topology(record) == "circular",
-        iou_thresholds=(0.10, 0.25, config.iou_threshold),
+        iou_threshold=config.iou_threshold,
     )
     window_path = evaluation_dir / "window_predictions.csv"
     matches_path = evaluation_dir / "promoter_matches.csv"
@@ -325,7 +327,7 @@ def _load_manifest(path: Path) -> dict[str, Any]:
 
 def _resolve_threshold(explicit: float | None, manifest: dict[str, Any]) -> tuple[float, str]:
     if explicit is not None:
-        return float(explicit), "cli"
+        return float(explicit), "cli_override"
     candidates = [
         manifest.get("evaluation", {}).get("selected_threshold"),
         manifest.get("threshold_selection", {}).get("threshold"),
@@ -339,15 +341,10 @@ def _resolve_threshold(explicit: float | None, manifest: dict[str, Any]) -> tupl
 def _resolve_window_size(explicit: int | None, manifest: dict[str, Any]) -> int:
     if explicit is not None:
         return int(explicit)
-    candidates = [
-        manifest.get("preprocessing", {}).get("sequence_length"),
-        manifest.get("model", {}).get("params", {}).get("max_length"),
-        manifest.get("model", {}).get("params", {}).get("model_max_length"),
-    ]
-    for value in candidates:
-        if value:
-            return int(value)
-    raise ValueError("Benchmark manifest does not contain a preprocessing window size.")
+    value = manifest.get("preprocessing", {}).get("sequence_length")
+    if value is None:
+        raise ValueError("Benchmark manifest does not contain preprocessing.sequence_length.")
+    return int(value)
 
 
 def _resolve_outputs(config: PromoterAnnotationConfig) -> tuple[Path, Path, Path]:

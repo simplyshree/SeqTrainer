@@ -2,15 +2,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class PromoterPredictor(Protocol):
     def predict_proba(self, sequences: list[str]) -> list[float]:
         ...
 
-    def metadata(self) -> dict:
+    def metadata(self) -> dict[str, Any]:
         ...
 
 
@@ -32,7 +31,7 @@ class DummyPromoterPredictor:
                 scores.append(0.10)
         return scores
 
-    def metadata(self) -> dict:
+    def metadata(self) -> dict[str, Any]:
         return {
             "model_family": "dummy",
             "mode": "deterministic_smoke_test",
@@ -76,21 +75,26 @@ class DNABERT2PromoterPredictor:
 
         self._torch = torch
         self._manifest = json.loads(self.benchmark_manifest.read_text(encoding="utf-8-sig"))
-        self._model_name = str(_manifest_get(self._manifest, ("model", "name"), "zhihan1996/DNABERT-2-117M"))
-        self._model_params = dict(_manifest_get(self._manifest, ("model", "params"), {}))
-        self._preprocessing = dict(_manifest_get(self._manifest, ("preprocessing", "params"), {}))
-        self._pooling = str(self._model_params.get("pooling", "mean"))
-        self._batch_size = int(_manifest_get(self._manifest, ("training", "batch_size"), 8) or 8)
+        self._model_name = str(_required_manifest_value(self._manifest, ("model", "name")))
+        self._model_params = dict(_required_manifest_value(self._manifest, ("model", "params")))
+        self._preprocessing = dict(_required_manifest_value(self._manifest, ("preprocessing", "params")))
+        self._pooling = str(_required_mapping_value(self._model_params, "pooling", "model.params"))
+        self._batch_size = int(_required_manifest_value(self._manifest, ("training", "batch_size")))
+        self._max_length = int(_required_mapping_value(self._preprocessing, "model_max_length", "preprocessing.params"))
+        self._padding = str(_required_mapping_value(self._preprocessing, "padding", "preprocessing.params"))
+        self._revision = str(_required_mapping_value(self._model_params, "revision", "model.params"))
+        self._classifier_dropout = float(_required_mapping_value(self._model_params, "classifier_dropout", "model.params"))
+        self._allow_download = bool(_required_mapping_value(self._model_params, "allow_download", "model.params"))
+        self._trust_remote_code = bool(_required_mapping_value(self._model_params, "trust_remote_code", "model.params"))
         self._device = _resolve_torch_device(torch)
 
-        allow_download = bool(self._model_params.get("allow_download", False))
         tokenizer, encoder = _load_huggingface_dnabert2(
             self._model_name,
             device=self._device,
-            trust_remote_code=bool(self._model_params.get("trust_remote_code", True)),
-            local_files_only=not allow_download,
+            trust_remote_code=self._trust_remote_code,
+            local_files_only=not self._allow_download,
             disable_flash_attention=bool(self._model_params.get("disable_flash_attention", True)),
-            revision=self._model_params.get("revision"),
+            revision=self._revision,
         )
         self._tokenizer = tokenizer
         hidden_size = int(getattr(encoder.config, "hidden_size", 768))
@@ -98,7 +102,7 @@ class DNABERT2PromoterPredictor:
             encoder=encoder,
             hidden_size=hidden_size,
             pooling=self._pooling,
-            dropout=float(self._model_params.get("classifier_dropout", 0.1)),
+            dropout=self._classifier_dropout,
         ).to(self._device)
         state_dict = _load_torch_state_dict(torch, self.checkpoint)
         self._model.load_state_dict(state_dict, strict=True)
@@ -109,22 +113,15 @@ class DNABERT2PromoterPredictor:
             return []
         torch = self._torch
         probabilities: list[float] = []
-        max_length = int(
-            self._preprocessing.get(
-                "model_max_length",
-                _manifest_get(self._manifest, ("preprocessing", "sequence_length"), 300),
-            )
-        )
-        padding = str(self._preprocessing.get("padding", "longest"))
         pad_to_multiple_of = self._preprocessing.get("pad_to_multiple_of")
         with torch.inference_mode():
             for start in range(0, len(sequences), self._batch_size):
                 batch_sequences = sequences[start : start + self._batch_size]
                 encoded = self._tokenizer(
                     batch_sequences,
-                    padding=padding,
+                    padding=self._padding,
                     truncation=True,
-                    max_length=max_length,
+                    max_length=self._max_length,
                     pad_to_multiple_of=int(pad_to_multiple_of) if pad_to_multiple_of is not None else None,
                     return_tensors="pt",
                 )
@@ -142,13 +139,15 @@ class DNABERT2PromoterPredictor:
                 probabilities.extend(torch.sigmoid(logits).detach().cpu().numpy().astype(float).tolist())
         return probabilities
 
-    def metadata(self) -> dict:
+    def metadata(self) -> dict[str, Any]:
         return {
             "model_family": "dnabert2",
             "checkpoint": str(self.checkpoint),
             "benchmark_manifest": str(self.benchmark_manifest),
             "model_name": self._model_name,
             "pooling": self._pooling,
+            "revision": self._revision,
+            "model_download_enabled": self._allow_download,
             "device": str(self._device),
             "batch_size": self._batch_size,
             "mode": self._model_params.get("mode"),
@@ -175,6 +174,20 @@ def _manifest_get(manifest: dict[str, Any], keys: tuple[str, ...], default: Any 
             return default
         current = current[key]
     return current
+
+
+def _required_manifest_value(manifest: dict[str, Any], keys: tuple[str, ...]) -> Any:
+    value = _manifest_get(manifest, keys)
+    if value is None or value == "":
+        raise ValueError(f"DNABERT2 benchmark manifest is missing required field: {'.'.join(keys)}")
+    return value
+
+
+def _required_mapping_value(values: dict[str, Any], key: str, section: str) -> Any:
+    value = values.get(key)
+    if value is None or value == "":
+        raise ValueError(f"DNABERT2 benchmark manifest is missing required field: {section}.{key}")
+    return value
 
 
 def _resolve_torch_device(torch: Any) -> Any:

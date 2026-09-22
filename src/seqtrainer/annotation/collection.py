@@ -9,6 +9,7 @@ import pandas as pd
 
 from .genbank_io import read_genbank
 from .ground_truth import extract_ground_truth_promoters
+from .predictors import build_predictor
 from .promoter_inference import PromoterAnnotationConfig, run_promoter_annotation
 from .provenance import file_sha256
 
@@ -41,6 +42,11 @@ def run_promoter_collection(
     included: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     aggregate_rows: list[dict[str, Any]] = []
+    predictor = build_predictor(
+        model_family,
+        checkpoint=Path(checkpoint) if checkpoint else None,
+        benchmark_manifest=Path(benchmark_manifest) if benchmark_manifest else None,
+    )
     for row in table.to_dict(orient="records"):
         filename = str(row["expected_local_filename"])
         source = input_dir / filename
@@ -72,14 +78,15 @@ def run_promoter_collection(
                     promoter_label_mode=promoter_label_mode,
                     annotation_completeness=annotation_completeness,
                     source_url=str(row.get("plasmid_url", "")) or None,
-                )
+                ),
+                predictor=predictor,
             )
             included.append({**row, "inclusion_status": "included", "exclusion_reason": "", "sha256": file_sha256(source), "promoter_count": len(gold)})
             window_metrics = result.get("evaluation", {}).get("metrics_json")
             if window_metrics and Path(window_metrics).exists():
                 payload = json.loads(Path(window_metrics).read_text(encoding="utf-8"))
                 aggregate_rows.append({"addgene_id": row["addgene_id"], **_flatten(payload.get("merged", {}))})
-        except Exception as exc:
+        except (OSError, ValueError) as exc:
             excluded.append({**row, "inclusion_status": "excluded", "exclusion_reason": f"processing error: {type(exc).__name__}: {exc}"})
             if not continue_on_error:
                 raise

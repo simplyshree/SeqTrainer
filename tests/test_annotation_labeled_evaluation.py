@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from seqtrainer.annotation import PromoterAnnotationConfig, run_promoter_annotation
 from seqtrainer.annotation.collection import run_promoter_collection
@@ -34,6 +35,7 @@ def test_ground_truth_evidence_tiers_and_exclusions():
     promoters = extract_ground_truth_promoters(_record(), plasmid_id="p1")
     assert [item.evidence_tier for item in promoters] == ["A", "A", "B", "A"]
     assert promoters[-1].wraps_origin is True
+    assert (promoters[-1].start, promoters[-1].end) == (27, 3)
     strict = extract_ground_truth_promoters(_record(), label_mode="strict")
     assert len(strict) == 3
     assert all(item.evidence_tier == "A" for item in strict)
@@ -118,18 +120,22 @@ def _region(region_id: str, start: int, end: int) -> PromoterRegion:
     return PromoterRegion(region_id, start, end, "+", 0.9, (region_id,))
 
 
-def test_merged_evaluation_uses_the_requested_iou_threshold():
+@pytest.mark.parametrize(
+    ("iou_threshold", "expected_matches"),
+    [(0.10, 1), (0.25, 1), (0.50, 1), (0.75, 0)],
+)
+def test_merged_evaluation_uses_the_requested_iou_threshold(iou_threshold: float, expected_matches: int):
     _, metrics = evaluate_merged_features(
         [_region("prediction", 0, 10)],
         [_gold("gold", 0, 20)],
         sequence_length=100,
         plasmid_id="p1",
-        iou_thresholds=(0.10, 0.25, 0.75),
+        iou_threshold=iou_threshold,
     )
 
-    assert metrics["iou_threshold"] == 0.75
-    assert metrics["matched_promoter_count"] == 0
-    assert metrics["labelled_promoter_recall"] == 0.0
+    assert metrics["iou_threshold"] == iou_threshold
+    assert metrics["matched_promoter_count"] == expected_matches
+    assert metrics["labelled_promoter_recall"] == float(expected_matches)
     assert metrics["matched_promoter_counts"]["0.25"] == 1
 
 
@@ -139,7 +145,7 @@ def test_merged_evaluation_uses_maximum_cardinality_matching():
         [_gold("short", 0, 10), _gold("long", 0, 20)],
         sequence_length=100,
         plasmid_id="p1",
-        iou_thresholds=(0.50,),
+        iou_threshold=0.50,
     )
 
     assert metrics["matched_promoter_count"] == 2
@@ -153,7 +159,7 @@ def test_merged_evaluation_uses_circular_boundary_distance():
         sequence_length=100,
         plasmid_id="p1",
         circular=True,
-        iou_thresholds=(0.10,),
+        iou_threshold=0.10,
     )
 
     assert metrics["median_boundary_error"] == 1.0

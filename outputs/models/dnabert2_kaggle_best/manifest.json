@@ -106,6 +106,7 @@
     "task": "bacterial_promoter_prediction"
   },
   "extra": {
+    "workflow_provenance_note": "This benchmark bundle was prepared across Kaggle and Google Colab. The runtime block records the environment that wrote this manifest; the checkpoint path preserves the workspace location captured during training or export.",
     "imbalance_policy": {
       "apply_to_training": false,
       "class_counts": {

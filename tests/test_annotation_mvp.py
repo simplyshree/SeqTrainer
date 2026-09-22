@@ -216,6 +216,38 @@ def test_annotation_uses_threshold_and_window_from_benchmark_manifest(tmp_path):
     assert manifest["window_size"] == 8
 
 
+def test_annotation_records_dnabert2_threshold_override(tmp_path):
+    from seqtrainer.annotation.predictors import DummyPromoterPredictor
+
+    input_gb = _write_synthetic_genbank(tmp_path / "input.gb")
+    benchmark_manifest = tmp_path / "benchmark_manifest.json"
+    benchmark_manifest.write_text(
+        '{"evaluation": {"selected_threshold": 0.9}, "preprocessing": {"sequence_length": 8}}',
+        encoding="utf-8",
+    )
+    checkpoint = tmp_path / "best_model.pt"
+    checkpoint.write_bytes(b"checkpoint")
+
+    manifest = run_promoter_annotation(
+        PromoterAnnotationConfig(
+            input_file=input_gb,
+            output_file=tmp_path / "annotated.gb",
+            predictions_csv=tmp_path / "predictions.csv",
+            manifest=tmp_path / "manifest.json",
+            model_family="dnabert2",
+            checkpoint=checkpoint,
+            benchmark_manifest=benchmark_manifest,
+            threshold=0.8,
+            step_size=4,
+        ),
+        predictor=DummyPromoterPredictor(),
+    )
+
+    assert manifest["threshold"] == 0.8
+    assert manifest["threshold_source"] == "cli_override"
+    assert any("overridden" in warning for warning in manifest["warnings"])
+
+
 def test_annotation_accepts_windows_utf8_bom_benchmark_manifest(tmp_path):
     from seqtrainer.annotation.predictors import DummyPromoterPredictor
 

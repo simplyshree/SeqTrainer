@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import platform
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -140,7 +139,6 @@ def export_sbol2(
         "source_feature_count": source_count,
         "gold_promoter_count": gold_count,
         "predicted_promoter_count": predicted_count,
-        "python": platform.python_version(),
     }
 
 

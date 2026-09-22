@@ -70,12 +70,13 @@ def evaluate_merged_features(
     sequence_length: int,
     plasmid_id: str,
     circular: bool = False,
-    iou_thresholds: tuple[float, ...] = (0.10, 0.25, 0.50),
+    iou_threshold: float = 0.50,
+    report_iou_thresholds: tuple[float, ...] = (0.10, 0.25),
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     predicted = list(predictions)
     gold_list = list(gold)
-    primary_threshold = float(iou_thresholds[-1])
-    thresholds = tuple(dict.fromkeys(float(value) for value in iou_thresholds))
+    primary_threshold = float(iou_threshold)
+    thresholds = tuple(dict.fromkeys((*map(float, report_iou_thresholds), primary_threshold)))
     assignments_by_threshold = {
         threshold: _maximum_cardinality_matches(predicted, gold_list, sequence_length, threshold)
         for threshold in thresholds

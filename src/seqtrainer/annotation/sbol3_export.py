@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import platform
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -14,12 +13,11 @@ from .write_features import PromoterRegion
 
 
 _ROLE_MAP = {
-    "promoter": "SO:0000167",
-    "cds": "SO:0000316",
-    "rbs": "SO:0000552",
-    "terminator": "SO:0000141",
-    "origin": "SO:0000296",
-    "operator": "SO:0000057",
+    "cds": "http://identifiers.org/so/SO:0000316",
+    "rbs": "http://identifiers.org/so/SO:0000552",
+    "terminator": "http://identifiers.org/so/SO:0000141",
+    "origin": "http://identifiers.org/so/SO:0000296",
+    "operator": "http://identifiers.org/so/SO:0000057",
 }
 
 
@@ -125,7 +123,7 @@ def export_sbol3(
     if validation_path:
         Path(validation_path).parent.mkdir(parents=True, exist_ok=True)
         Path(validation_path).write_text(json.dumps({**validation, "round_trip_objects": len(round_trip.objects)}, indent=2) + "\n", encoding="utf-8")
-    return {"path": str(out), "validation": validation, "round_trip_objects": len(round_trip.objects), "sbol3_version": getattr(sbol3, "__version__", None), "python": platform.python_version()}
+    return {"path": str(out), "validation": validation, "round_trip_objects": len(round_trip.objects), "sbol3_version": getattr(sbol3, "__version__", None)}
 
 
 def _feature_locations(sbol3: Any, sequence: Any, feature: Any, length: int) -> list[Any]:
@@ -149,8 +147,9 @@ def _interval_locations(sbol3: Any, sequence: Any, start: int, end: int, strand:
 
 
 def _role_for_feature(sbol3: Any, feature_type: str) -> str | None:
-    value = _ROLE_MAP.get(feature_type)
-    return {"SO:0000167": sbol3.SO_PROMOTER, "SO:0000316": "http://identifiers.org/so/SO:0000316", "SO:0000552": "http://identifiers.org/so/SO:0000552", "SO:0000141": "http://identifiers.org/so/SO:0000141", "SO:0000296": "http://identifiers.org/so/SO:0000296", "SO:0000057": "http://identifiers.org/so/SO:0000057"}.get(value) if value else None
+    if feature_type == "promoter":
+        return sbol3.SO_PROMOTER
+    return _ROLE_MAP.get(feature_type)
 
 
 def _feature_label(feature: Any) -> str:
