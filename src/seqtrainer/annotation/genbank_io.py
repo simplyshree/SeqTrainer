@@ -46,4 +46,3 @@ def is_circular(record: Any) -> bool:
 def record_topology(record: Any) -> str:
     """Return a normalized topology string."""
     return "circular" if is_circular(record) else "linear"
-

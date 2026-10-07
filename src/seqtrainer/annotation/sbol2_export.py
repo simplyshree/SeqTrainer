@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -48,7 +49,10 @@ def export_sbol2(
     parent = sbol2.ComponentDefinition(plasmid_id, component_type=sbol2.BIOPAX_DNA)
     parent.name = plasmid_id
     parent.description = "SeqTrainer annotated DNA design."
-    if str(getattr(record, "annotations", {}).get("topology", "")).lower() == "circular":
+    if (
+        str(getattr(record, "annotations", {}).get("topology", "")).lower()
+        == "circular"
+    ):
         parent.addRole(sbol2.SO_CIRCULAR)
 
     sequence = sbol2.Sequence(
@@ -87,16 +91,28 @@ def export_sbol2(
         source_count += 1
 
     for index, promoter in enumerate(gold_promoters):
-        feature_id = _unique_id(promoter.label or f"deposited_promoter_{index:04d}", used_ids)
+        feature_id = _unique_id(
+            promoter.label or f"deposited_promoter_{index:04d}", used_ids
+        )
         _add_feature(
             doc,
             parent,
             feature_id=feature_id,
             label=promoter.label or feature_id,
-            locations=_interval_locations(promoter.start, promoter.end, promoter.strand, promoter.wraps_origin, len(record.seq)),
+            locations=_interval_locations(
+                promoter.start,
+                promoter.end,
+                promoter.strand,
+                promoter.wraps_origin,
+                len(record.seq),
+            ),
             role=sbol2.SO_PROMOTER,
             description=f"Depositor-provided promoter; evidence tier={promoter.evidence_tier}.",
-            metadata={"source": "ground_truth", "evidence_tier": promoter.evidence_tier, "source_url": source_url},
+            metadata={
+                "source": "ground_truth",
+                "evidence_tier": promoter.evidence_tier,
+                "source_url": source_url,
+            },
         )
         gold_count += 1
 
@@ -108,7 +124,13 @@ def export_sbol2(
             parent,
             feature_id=feature_id,
             label="predicted_promoter",
-            locations=_interval_locations(promoter.start, promoter.end, promoter.strand, promoter.crosses_boundary, len(record.seq)),
+            locations=_interval_locations(
+                promoter.start,
+                promoter.end,
+                promoter.strand,
+                promoter.crosses_boundary,
+                len(record.seq),
+            ),
             role=sbol2.SO_PROMOTER,
             description=(
                 f"SeqTrainer predicted promoter; score={promoter.score:.6f}; "
@@ -127,7 +149,10 @@ def export_sbol2(
 
     out = Path(output_path)
     out.parent.mkdir(parents=True, exist_ok=True)
-    doc.write(str(out))
+    # pySBOL2 validates through a public service by default. Export remains
+    # self-contained; the RDF/XML round trip and Canvas checks below still run.
+    with _without_automatic_sbol2_validation(sbol2):
+        doc.write(str(out))
     round_trip = sbol2.Document()
     round_trip.read(str(out))
     canvas_check = _validate_canvas_compatibility(round_trip)
@@ -140,6 +165,17 @@ def export_sbol2(
         "gold_promoter_count": gold_count,
         "predicted_promoter_count": predicted_count,
     }
+
+
+@contextmanager
+def _without_automatic_sbol2_validation(sbol2: Any):
+    option = sbol2.ConfigOptions.VALIDATE
+    previous = sbol2.Config.getOption(option)
+    sbol2.Config.setOption(option, False)
+    try:
+        yield
+    finally:
+        sbol2.Config.setOption(option, previous)
 
 
 def _validate_canvas_compatibility(document: Any) -> dict[str, Any]:
@@ -183,7 +219,9 @@ def _add_feature(
 
     definition = sbol2.ComponentDefinition(feature_id, component_type=sbol2.BIOPAX_DNA)
     definition.name = label
-    metadata_text = "; ".join(f"{key}={value}" for key, value in metadata.items() if value is not None)
+    metadata_text = "; ".join(
+        f"{key}={value}" for key, value in metadata.items() if value is not None
+    )
     definition.description = f"{description} {metadata_text}".strip()
     definition.addRole(role)
     doc.add(definition)
@@ -197,7 +235,9 @@ def _add_feature(
     annotation = sbol2.SequenceAnnotation(f"{feature_id}_annotation")
     annotation.component = component
     for order, item in enumerate(locations):
-        location = sbol2.Range(f"{feature_id}_range_{order}", int(item["start"]), int(item["end"]))
+        location = sbol2.Range(
+            f"{feature_id}_range_{order}", int(item["start"]), int(item["end"])
+        )
         location.orientation = (
             sbol2.SBOL_ORIENTATION_REVERSE_COMPLEMENT
             if item.get("orientation") == -1
@@ -207,10 +247,17 @@ def _add_feature(
     parent.sequenceAnnotations.add(annotation)
 
 
-def _interval_locations(start: int, end: int, strand: str | int | None, wraps: bool, length: int) -> list[dict[str, Any]]:
-    intervals = [(start, length), (0, end % length)] if wraps or start > end else [(start, end)]
+def _interval_locations(
+    start: int, end: int, strand: str | int | None, wraps: bool, length: int
+) -> list[dict[str, Any]]:
+    intervals = (
+        [(start, length), (0, end % length)] if wraps or start > end else [(start, end)]
+    )
     orientation = -1 if strand in ("-", -1) else 1
-    return [{"start": left + 1, "end": right, "orientation": orientation} for left, right in intervals]
+    return [
+        {"start": left + 1, "end": right, "orientation": orientation}
+        for left, right in intervals
+    ]
 
 
 def _role_for_feature(feature_type: str, label: str) -> str:

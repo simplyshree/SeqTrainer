@@ -96,4 +96,3 @@ def _slice_window(sequence: str, start: int, window_size: int, circular: bool) -
     if not circular:
         return sequence[start:], False
     return "".join(sequence[(start + offset) % len(sequence)] for offset in range(window_size)), True
-

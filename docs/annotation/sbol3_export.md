@@ -31,6 +31,11 @@ rendered child component is roleless. A failed compatibility check stops the
 run locally with the offending component IDs instead of leaving Canvas to show
 an uninformative import error.
 
+The SBOL2 writer does not contact the public pySBOL2 validator during ordinary
+annotation. It verifies local RDF/XML round-tripping and the SBOLCanvas role
+contract; use an external SBOL validator separately when formal validation is
+required.
+
 Canvas may warn that individual components do not have sequences. Those
 warnings are non-blocking because the parent plasmid component has the full
 sequence and all child features have explicit coordinate ranges. Per-feature

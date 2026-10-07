@@ -71,4 +71,3 @@ def add_predicted_promoter_features(
         record.features.append(SeqFeature(location=location, type="promoter", qualifiers=qualifiers))
         added += 1
     return added, boundary_written
-

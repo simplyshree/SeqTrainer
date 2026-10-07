@@ -5,7 +5,10 @@ import pytest
 
 from seqtrainer.annotation import PromoterAnnotationConfig, run_promoter_annotation
 from seqtrainer.annotation.collection import run_promoter_collection
-from seqtrainer.annotation.coordinate_conversion import sbol_orientation, sbol_ranges_for_location
+from seqtrainer.annotation.coordinate_conversion import (
+    sbol_orientation,
+    sbol_ranges_for_location,
+)
 from seqtrainer.annotation.ground_truth import extract_ground_truth_promoters
 from seqtrainer.annotation.windows import generate_sliding_windows
 from seqtrainer.annotation.sbol3_export import _safe_id
@@ -22,11 +25,33 @@ def _record():
     record = SeqRecord(Seq("A" * 30), id="labelled_plasmid", name="labelled_plasmid")
     record.annotations.update({"molecule_type": "DNA", "topology": "circular"})
     record.features = [
-        SeqFeature(FeatureLocation(4, 9, strand=1), type="promoter", qualifiers={"label": ["deposited_p"]}),
-        SeqFeature(FeatureLocation(12, 16, strand=-1), type="regulatory", qualifiers={"regulatory_class": ["promoter"]}),
-        SeqFeature(FeatureLocation(26, 30, strand=1), type="misc_feature", qualifiers={"label": ["explicit promoter marker"]}),
-        SeqFeature(CompoundLocation([FeatureLocation(27, 30, strand=1), FeatureLocation(0, 3, strand=1)]), type="promoter", qualifiers={"label": ["origin promoter"]}),
-        SeqFeature(FeatureLocation(18, 20), type="misc_feature", qualifiers={"label": ["promoterless cassette"]}),
+        SeqFeature(
+            FeatureLocation(4, 9, strand=1),
+            type="promoter",
+            qualifiers={"label": ["deposited_p"]},
+        ),
+        SeqFeature(
+            FeatureLocation(12, 16, strand=-1),
+            type="regulatory",
+            qualifiers={"regulatory_class": ["promoter"]},
+        ),
+        SeqFeature(
+            FeatureLocation(26, 30, strand=1),
+            type="misc_feature",
+            qualifiers={"label": ["explicit promoter marker"]},
+        ),
+        SeqFeature(
+            CompoundLocation(
+                [FeatureLocation(27, 30, strand=1), FeatureLocation(0, 3, strand=1)]
+            ),
+            type="promoter",
+            qualifiers={"label": ["origin promoter"]},
+        ),
+        SeqFeature(
+            FeatureLocation(18, 20),
+            type="misc_feature",
+            qualifiers={"label": ["promoterless cassette"]},
+        ),
     ]
     return record
 
@@ -45,8 +70,17 @@ def test_so_cross_reference_is_tier_a_and_plasmid_name_is_not_evidence():
     from Bio.SeqFeature import FeatureLocation, SeqFeature
 
     record = _record()
-    record.features.append(SeqFeature(FeatureLocation(20, 24), type="misc_feature", qualifiers={"db_xref": ["SO:0000167"]}))
-    assert any(item.evidence_rule == "db_xref=SO:0000167" for item in extract_ground_truth_promoters(record))
+    record.features.append(
+        SeqFeature(
+            FeatureLocation(20, 24),
+            type="misc_feature",
+            qualifiers={"db_xref": ["SO:0000167"]},
+        )
+    )
+    assert any(
+        item.evidence_rule == "db_xref=SO:0000167"
+        for item in extract_ground_truth_promoters(record)
+    )
     record.features = []
     record.id = "promoter_expected_but_unlabelled"
     assert extract_ground_truth_promoters(record) == []
@@ -124,7 +158,9 @@ def _region(region_id: str, start: int, end: int) -> PromoterRegion:
     ("iou_threshold", "expected_matches"),
     [(0.10, 1), (0.25, 1), (0.50, 1), (0.75, 0)],
 )
-def test_merged_evaluation_uses_the_requested_iou_threshold(iou_threshold: float, expected_matches: int):
+def test_merged_evaluation_uses_the_requested_iou_threshold(
+    iou_threshold: float, expected_matches: int
+):
     _, metrics = evaluate_merged_features(
         [_region("prediction", 0, 10)],
         [_gold("gold", 0, 20)],
@@ -152,7 +188,9 @@ def test_merged_evaluation_uses_maximum_cardinality_matching():
 
 
 def test_merged_evaluation_uses_circular_boundary_distance():
-    predicted = PromoterRegion("prediction", 99, 4, "+", 0.9, ("prediction",), crosses_boundary=True)
+    predicted = PromoterRegion(
+        "prediction", 99, 4, "+", 0.9, ("prediction",), crosses_boundary=True
+    )
     _, metrics = evaluate_merged_features(
         [predicted],
         [_gold("gold", 1, 4)],
@@ -166,7 +204,9 @@ def test_merged_evaluation_uses_circular_boundary_distance():
 
 
 def test_merged_evaluation_normalizes_circular_region_end_coordinates():
-    predicted = PromoterRegion("prediction", 99, 104, "+", 0.9, ("prediction",), crosses_boundary=True)
+    predicted = PromoterRegion(
+        "prediction", 99, 104, "+", 0.9, ("prediction",), crosses_boundary=True
+    )
     frame, metrics = evaluate_merged_features(
         [predicted],
         [_gold("gold", 99, 4)],
@@ -235,13 +275,19 @@ def test_annotation_cli_writes_validated_sbol3_output(tmp_path: Path):
     parent = next(
         obj
         for obj in legacy_document
-        if isinstance(obj, sbol2.ComponentDefinition) and obj.displayId == "labelled_plasmid"
+        if isinstance(obj, sbol2.ComponentDefinition)
+        and obj.displayId == "labelled_plasmid"
     )
     assert len(parent.components) >= 1
     assert len(parent.sequenceAnnotations) >= 1
     component_ids = {component.identity for component in parent.components}
-    assert all(annotation.component in component_ids for annotation in parent.sequenceAnnotations)
-    annotation_manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert all(
+        annotation.component in component_ids
+        for annotation in parent.sequenceAnnotations
+    )
+    annotation_manifest = json.loads(
+        (tmp_path / "manifest.json").read_text(encoding="utf-8")
+    )
     sbol2_metadata = annotation_manifest["evaluation"]["sbol"]["sbol2"]
     assert sbol2_metadata["canvas_compatible"] is True
     assert sbol2_metadata["canvas_roleless_child_component_count"] == 0
@@ -285,17 +331,61 @@ def test_sbol2_export_assigns_canvas_safe_role_to_untyped_features(tmp_path: Pat
     parent = next(
         obj
         for obj in document
-        if isinstance(obj, sbol2.ComponentDefinition) and obj.displayId == "labelled_plasmid"
+        if isinstance(obj, sbol2.ComponentDefinition)
+        and obj.displayId == "labelled_plasmid"
     )
-    definitions = [document.getComponentDefinition(component.definition) for component in parent.components]
+    definitions = [
+        document.getComponentDefinition(component.definition)
+        for component in parent.components
+    ]
     assert all(definition.roles for definition in definitions)
+
+
+def test_sbol2_export_does_not_call_the_online_validator(tmp_path: Path, monkeypatch):
+    from Bio import SeqIO
+    import sbol2
+
+    input_path = tmp_path / "input.gb"
+    SeqIO.write(_record(), input_path, "genbank")
+    previous = sbol2.Config.getOption(sbol2.ConfigOptions.VALIDATE)
+    sbol2.Config.setOption(sbol2.ConfigOptions.VALIDATE, True)
+
+    def fail_if_called(_document):
+        pytest.fail("SBOL2 export must not call the online validator")
+
+    monkeypatch.setattr(sbol2.Document, "validate", fail_if_called)
+    try:
+        run_promoter_annotation(
+            PromoterAnnotationConfig(
+                input_file=input_path,
+                output_file=tmp_path / "annotated.gb",
+                predictions_csv=tmp_path / "predictions.csv",
+                manifest=tmp_path / "manifest.json",
+                model_family="dummy",
+                threshold=0.8,
+                window_size=8,
+                step_size=4,
+                sbol2_output=tmp_path / "annotated.rdf",
+            )
+        )
+        assert sbol2.Config.getOption(sbol2.ConfigOptions.VALIDATE) is True
+    finally:
+        sbol2.Config.setOption(sbol2.ConfigOptions.VALIDATE, previous)
 
 
 def test_window_centre_labels_same_strand():
     record = _record()
     gold = extract_ground_truth_promoters(record)
-    windows = generate_sliding_windows(str(record.seq), window_size=6, step_size=6, circular=True, scan_both_strands=True)
-    labels, ids = __import__("seqtrainer.annotation.evaluation", fromlist=["window_gold_labels"]).window_gold_labels(windows, gold, len(record.seq))
+    windows = generate_sliding_windows(
+        str(record.seq),
+        window_size=6,
+        step_size=6,
+        circular=True,
+        scan_both_strands=True,
+    )
+    labels, ids = __import__(
+        "seqtrainer.annotation.evaluation", fromlist=["window_gold_labels"]
+    ).window_gold_labels(windows, gold, len(record.seq))
     assert len(labels) == len(windows)
     assert any(label == 1 for label in labels)
     assert any(ids)

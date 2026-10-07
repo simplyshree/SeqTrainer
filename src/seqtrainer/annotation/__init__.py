@@ -10,4 +10,3 @@ __all__ = [
     "run_promoter_annotation",
     "write_gold_promoters",
 ]
-

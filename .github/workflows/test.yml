@@ -1,0 +1,22 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --locked --extra dev --extra annotation
+      - run: uv run pytest -q tests/test_annotation_mvp.py tests/test_annotation_labeled_evaluation.py
+      - run: uv run ruff check src/seqtrainer/annotation tests/test_annotation_mvp.py tests/test_annotation_labeled_evaluation.py

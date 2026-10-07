@@ -201,4 +201,3 @@ def _load_torch_state_dict(torch: Any, checkpoint: Path) -> dict[str, Any]:
     if not isinstance(state, dict):
         raise ValueError(f"DNABERT2 checkpoint did not contain a state dict: {checkpoint}")
     return state
-
