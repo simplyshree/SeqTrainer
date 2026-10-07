@@ -165,6 +165,21 @@ def test_merged_evaluation_uses_circular_boundary_distance():
     assert metrics["median_boundary_error"] == 1.0
 
 
+def test_merged_evaluation_normalizes_circular_region_end_coordinates():
+    predicted = PromoterRegion("prediction", 99, 104, "+", 0.9, ("prediction",), crosses_boundary=True)
+    frame, metrics = evaluate_merged_features(
+        [predicted],
+        [_gold("gold", 99, 4)],
+        sequence_length=100,
+        plasmid_id="p1",
+        circular=True,
+        iou_threshold=0.10,
+    )
+
+    assert frame.loc[0, "end_error_bp"] == 0
+    assert metrics["median_boundary_error"] == 0.0
+
+
 def test_annotation_cli_writes_validated_sbol3_output(tmp_path: Path):
     import json
 

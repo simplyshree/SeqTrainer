@@ -200,7 +200,12 @@ def _union(first: Any, second: Any, sequence_length: int) -> int:
 
 
 def _boundary_error(prediction: Any, gold: Any, sequence_length: int, field: str, circular: bool) -> int:
-    delta = abs(int(getattr(prediction, field)) - int(getattr(gold, field)))
+    prediction_coordinate = int(getattr(prediction, field))
+    gold_coordinate = int(getattr(gold, field))
+    if circular:
+        prediction_coordinate %= sequence_length
+        gold_coordinate %= sequence_length
+    delta = abs(prediction_coordinate - gold_coordinate)
     return min(delta, sequence_length - delta) if circular else delta
 
 
