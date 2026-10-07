@@ -27,6 +27,27 @@ contract. `best_model.pt` supplies the trained weights. Keep them together.
 If LFS is unavailable, use `scripts/prepare_dnabert2_annotation_bundle.ps1`
 with the supplied model archive.
 
+## Bundled Model and Threshold
+
+The default `--model-bundle` in this guide contains the following fixed
+annotation contract:
+
+| Item | Value |
+| --- | --- |
+| Model | `zhihan1996/DNABERT-2-117M`, revision `7bce263b15377fc15361f52cfab88f8b586abda0` |
+| Weights | Full-fine-tuned `best_model.pt`, seed 42, six epochs |
+| Training data | `EP_DNA_BERT2_genomic_order` from GEO `GSE144621` |
+| Shared split sizes | Train: 136,484; validation: 19,498; test: 38,996 sequences |
+| Annotation threshold | `0.677001953125` predicted-promoter probability |
+| Threshold basis | Highest Matthews correlation coefficient (MCC) on the held-out validation split |
+
+The test split was not used to choose this threshold. During annotation, a
+300-base window is called a possible promoter only when its DNABERT2
+probability is at least `0.677001953125`; nearby passing windows are then
+merged into a promoter region. The command reads this value from the bundled
+`manifest.json`, so users should not supply `--threshold` for the standard
+workflow.
+
 ## Run DNABERT2
 
 Keep a GenBank file outside the repository if preferred, then pass its full
