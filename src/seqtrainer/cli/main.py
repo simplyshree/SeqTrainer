@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from seqtrainer.data.sbol import build_dataset_from_files, get_sequence_from_sbol
@@ -97,6 +100,8 @@ def _build_parser() -> argparse.ArgumentParser:
     annotate_promoters.add_argument("--promoter-label-mode", choices=("strict", "labelled"), default="labelled")
     annotate_promoters.add_argument("--annotation-completeness", choices=("verified_complete", "partial", "unknown"), default="unknown")
     annotate_promoters.add_argument("--iou-threshold", type=float, default=0.50)
+    annotate_promoters.add_argument("--clean-output", action="store_true", help="Remove existing files from the directory containing --output before the run.")
+    annotate_promoters.add_argument("--open-output-folder", action="store_true", help="Open the completed output directory in the system file browser.")
 
     annotate_collection = annotate_sub.add_parser("promoter-collection", help="Evaluate a collection of labelled GenBank plasmids")
     annotate_collection.add_argument("--manifest", type=Path, required=True)
@@ -252,12 +257,15 @@ def main(argv: list[str] | None = None) -> int:
                     promoter_label_mode=args.promoter_label_mode,
                     annotation_completeness=args.annotation_completeness,
                     iou_threshold=args.iou_threshold,
+                    clean_output=args.clean_output,
                 )
             )
             print(f"output_file={manifest['output_file']}")
             print(f"predictions_csv={manifest['predictions_csv']}")
             print(f"manifest={manifest['manifest_file']}")
             print(f"predicted_promoters_added={manifest['predicted_promoters_added']}")
+            if args.open_output_folder:
+                _open_output_folder(Path(manifest["output_file"]).parent)
             return 0
 
         if args.annotate_command == "promoter-collection":
@@ -289,6 +297,16 @@ def main(argv: list[str] | None = None) -> int:
 
     parser.error("Unhandled command")
     return 2
+
+
+def _open_output_folder(path: Path) -> None:
+    resolved = path.resolve()
+    if os.name == "nt":
+        getattr(os, "startfile")(str(resolved))
+    elif sys.platform == "darwin":
+        subprocess.run(["open", str(resolved)], check=False)
+    else:
+        subprocess.run(["xdg-open", str(resolved)], check=False)
 
 
 def _write_benchmark_manifest(config_path: Path, output_dir_arg: Path | None, base_dir: Path) -> int:

@@ -180,6 +180,85 @@ def test_annotation_cli_dummy_smoke(tmp_path):
     assert manifest_json.exists()
 
 
+def test_annotation_clean_output_removes_stale_run_files(tmp_path):
+    input_gb = _write_synthetic_genbank(tmp_path / "input.gb")
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    (output_dir / "stale.txt").write_text("stale", encoding="utf-8")
+
+    run_promoter_annotation(
+        PromoterAnnotationConfig(
+            input_file=input_gb,
+            output_file=output_dir / "annotated.gb",
+            predictions_csv=output_dir / "predictions.csv",
+            manifest=output_dir / "manifest.json",
+            model_family="dummy",
+            threshold=0.80,
+            window_size=8,
+            step_size=4,
+            clean_output=True,
+        )
+    )
+
+    assert not (output_dir / "stale.txt").exists()
+    assert (output_dir / "annotated.gb").exists()
+
+
+def test_annotation_clean_output_rejects_an_input_inside_the_run_directory(tmp_path):
+    output_dir = tmp_path / "run"
+    output_dir.mkdir()
+    input_gb = _write_synthetic_genbank(output_dir / "input.gb")
+
+    with pytest.raises(ValueError, match="input GenBank file"):
+        run_promoter_annotation(
+            PromoterAnnotationConfig(
+                input_file=input_gb,
+                output_file=output_dir / "annotated.gb",
+                predictions_csv=output_dir / "predictions.csv",
+                manifest=output_dir / "manifest.json",
+                model_family="dummy",
+                threshold=0.80,
+                window_size=8,
+                step_size=4,
+                clean_output=True,
+            )
+        )
+
+
+def test_annotation_cli_opens_the_completed_run_folder(tmp_path, monkeypatch):
+    import importlib
+
+    cli_main = importlib.import_module("seqtrainer.cli.main")
+    input_gb = _write_synthetic_genbank(tmp_path / "input.gb")
+    output_dir = tmp_path / "run"
+    opened: list[Path] = []
+    monkeypatch.setattr(cli_main, "_open_output_folder", opened.append)
+
+    exit_code = cli_main.main(
+        [
+            "annotate",
+            "promoters",
+            str(input_gb),
+            "--model-family",
+            "dummy",
+            "--threshold",
+            "0.80",
+            "--window-size",
+            "8",
+            "--output",
+            str(output_dir / "annotated.gb"),
+            "--predictions-csv",
+            str(output_dir / "predictions.csv"),
+            "--manifest",
+            str(output_dir / "manifest.json"),
+            "--open-output-folder",
+        ]
+    )
+
+    assert exit_code == 0
+    assert opened == [output_dir]
+
+
 def test_annotation_uses_threshold_and_window_from_benchmark_manifest(tmp_path):
     from seqtrainer.annotation.predictors import DummyPromoterPredictor
 

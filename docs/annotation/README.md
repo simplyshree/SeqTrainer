@@ -40,8 +40,17 @@ seqtrainer annotate promoters "$env:USERPROFILE\Downloads\my_plasmid.gb" `
   --scan-both-strands `
   --output outputs\annotations\my_plasmid\annotated.gb `
   --predictions-csv outputs\annotations\my_plasmid\predictions.csv `
-  --manifest outputs\annotations\my_plasmid\manifest.json
+  --manifest outputs\annotations\my_plasmid\manifest.json `
+  --sbol-output outputs\annotations\my_plasmid\annotated.nt `
+  --sbol2-output outputs\annotations\my_plasmid\annotated.rdf `
+  --clean-output `
+  --open-output-folder
 ```
+
+`--clean-output` removes an earlier run from the directory containing `--output`.
+For safety, every optional artifact supplied with this flag must also be inside
+that directory, and the input GenBank file must be elsewhere. `--open-output-folder`
+opens the folder only after the run completes successfully.
 
 Use `--checkpoint` and `--benchmark-manifest` instead of `--model-bundle` only
 when the two paths must be supplied explicitly. A real DNABERT2 run requires

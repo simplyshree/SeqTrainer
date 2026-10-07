@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -41,6 +42,7 @@ class PromoterAnnotationConfig:
     annotation_completeness: str = "unknown"
     iou_threshold: float = 0.50
     source_url: str | None = None
+    clean_output: bool = False
 
 
 def run_promoter_annotation(
@@ -64,8 +66,14 @@ def run_promoter_annotation(
     if config.model_family == "dummy" and (config.threshold is None or config.window_size is None):
         raise ValueError("Dummy annotation requires explicit threshold and window_size values.")
 
-    record = read_genbank(config.input_file)
     output_file, predictions_csv, manifest_path = _resolve_outputs(config)
+    if config.clean_output:
+        _clean_output_directory(
+            output_file.parent,
+            input_file=config.input_file,
+            extra_outputs=(config.evaluation_dir, config.sbol_output, config.sbol2_output),
+        )
+    record = read_genbank(config.input_file)
     original_feature_count = len(record.features)
 
     gold_promoters = None
@@ -354,6 +362,35 @@ def _resolve_outputs(config: PromoterAnnotationConfig) -> tuple[Path, Path, Path
     predictions_csv = config.predictions_csv or out_dir / f"{stem}_{config.model_family}_predictions.csv"
     manifest = config.manifest or out_dir / f"{stem}_{config.model_family}_manifest.json"
     return output_file, predictions_csv, manifest
+
+
+def _clean_output_directory(
+    output_dir: Path,
+    *,
+    input_file: Path,
+    extra_outputs: tuple[Path | None, ...],
+) -> None:
+    root = output_dir.resolve()
+    if _is_within(input_file.resolve(), root):
+        raise ValueError("--clean-output cannot remove a directory containing the input GenBank file.")
+    for path in extra_outputs:
+        if path is not None and not _is_within(path.resolve(), root):
+            raise ValueError("--clean-output requires every requested artifact to be inside the output directory.")
+    if not root.exists():
+        return
+    for child in root.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _resolve_model_bundle(
