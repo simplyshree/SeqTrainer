@@ -25,6 +25,7 @@ Optional extras:
 pip install -e '.[torch]'
 pip install -e '.[keras]'
 pip install -e '.[gnn]'
+pip install -e '.[annotation]'
 pip install -e '.[dev]'
 ```
 
@@ -55,6 +56,9 @@ seqtrainer dataset recipes
 seqtrainer dataset build data/sbol_data/sample_design_0.xml --cache
 seqtrainer model build --framework torch --task regression
 ```
+
+For promoter annotation from a GenBank file, install `.[annotation,torch]` and
+follow the [annotation guide](docs/annotation/README.md).
 
 ## Status
 

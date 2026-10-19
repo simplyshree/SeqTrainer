@@ -8,6 +8,9 @@ testvenv/
 seqtrainer-data
 dnabert-out
 dnabertvenv
+outputs/annotations/
+outputs/addgene_18115/
+data/addgene_18115/raw/
 .pytest_tmp/
 artifacts/
 benchmark-outputs/
